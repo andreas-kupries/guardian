@@ -148,7 +148,7 @@ func (n *Networker) Network(log lager.Logger, containerSpec garden.ContainerSpec
 		return err
 	}
 
-	subnet, ip, err := n.subnetPool.Acquire(log, subnetReq, ipReq)
+	subnet, ip, err := n.subnetPool.Acquire(log, subnetReq, ipReq, containerSpec.Network)
 	if err != nil {
 		log.Error("acquire-failed", err)
 		return err

@@ -407,7 +407,7 @@ func (cmd *CommonCommand) wireNetworker(log lager.Logger, factory GardenFactory,
 
 	networker := kawasaki.New(
 		kawasaki.SpecParserFunc(kawasaki.ParseSpec),
-		subnets.NewPool(cmd.Network.Pool.CIDR()),
+		subnets.NewPool(cmd.Network.Pool.CIDR(), log),
 		kawasaki.NewConfigCreator(idGenerator, interfacePrefix, chainPrefix, externalIP, dnsServers, additionalDNSServers, cmd.Network.AdditionalHostEntries, containerMtu),
 		propManager,
 		kawasakifactory.NewDefaultConfigurer(ipTables, cmd.Containers.Dir),

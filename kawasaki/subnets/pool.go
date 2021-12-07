@@ -3,6 +3,7 @@
 package subnets
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"net"
@@ -16,7 +17,7 @@ type Pool interface {
 	// Allocates an IP address and associates it with a subnet. The subnet is selected by the given SubnetSelector.
 	// The IP address is selected by the given IPSelector.
 	// Returns a subnet, an IP address, and if either selector fails, an error is returned.
-	Acquire(lager.Logger, SubnetSelector, IPSelector) (*net.IPNet, net.IP, error)
+	Acquire(lager.Logger, SubnetSelector, IPSelector, string) (*net.IPNet, net.IP, error)
 
 	// Releases an IP address associated with an allocated subnet. If the subnet has no other IP
 	// addresses associated with it, it is deallocated.
@@ -37,6 +38,7 @@ type pool struct {
 	allocated    map[string][]net.IP // net.IPNet.String +> seq net.IP
 	dynamicRange *net.IPNet
 	mu           sync.Mutex
+	log lager.Logger
 }
 
 //go:generate counterfeiter . SubnetSelector
@@ -57,19 +59,22 @@ type IPSelector interface {
 	SelectIP(subnet *net.IPNet, existing []net.IP) (net.IP, error)
 }
 
-func NewPool(ipNet *net.IPNet) Pool {
-	return &pool{dynamicRange: ipNet, allocated: make(map[string][]net.IP)}
+func NewPool(ipNet *net.IPNet, log lager.Logger) Pool {
+	session := log.Session("XXX")
+	session.Debug("new-pool", lager.Data{"net": ipNet})
+	return &pool{dynamicRange: ipNet, allocated: make(map[string][]net.IP), log: session}
 }
 
 // Acquire uses the given subnet and IP selectors to request a subnet, container IP address combination
 // from the pool.
-func (p *pool) Acquire(log lager.Logger, sn SubnetSelector, i IPSelector) (subnet *net.IPNet, ip net.IP, err error) {
+func (p *pool) Acquire(log lager.Logger, sn SubnetSelector, i IPSelector, network string) (subnet *net.IPNet, ip net.IP, err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	if subnet, err = sn.SelectSubnet(p.dynamicRange, existingSubnets(p.allocated)); err != nil {
 		return nil, nil, err
 	}
+	log.Debug("select-subnet", lager.Data{"subnet": subnet, "network": network})
 
 	ips := p.allocated[subnet.String()]
 	existingIPs := append(ips, NetworkIP(subnet), GatewayIP(subnet), BroadcastIP(subnet))
@@ -78,6 +83,7 @@ func (p *pool) Acquire(log lager.Logger, sn SubnetSelector, i IPSelector) (subne
 	}
 
 	p.allocated[subnet.String()] = append(ips, ip)
+	p.log.Debug("acquired", lager.Data{"subnet": subnet, "ip": ip, "network": network})
 	return subnet, ip, err
 }
 
@@ -98,6 +104,7 @@ func (p *pool) Remove(subnet *net.IPNet, ip net.IP) error {
 	}
 
 	p.allocated[subnet.String()] = append(p.allocated[subnet.String()], ip)
+	p.log.Debug("removed", lager.Data{"subnet": subnet, "ip": ip})
 	return nil
 }
 
@@ -115,6 +122,7 @@ func (p *pool) Release(subnet *net.IPNet, ip net.IP) error {
 			p.allocated[subnetString] = reducedIps
 		}
 
+		p.log.Debug("released", lager.Data{"subnet": subnet, "ip": ip})
 		return nil
 	}
 
@@ -139,6 +147,18 @@ func (p *pool) RunIfFree(subnet *net.IPNet, cb func() error) error {
 	return cb()
 }
 
+func (p *pool) MarshalJSON() ([]byte, error) {
+	data := map[string]interface{}{
+		"allocated": p.allocated,
+		"dynamicRange": p.dynamicRange,
+	}
+	buf, err := json.Marshal(data)
+	if err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
 // Returns the gateway IP of a given subnet, which is always the maximum valid IP
 func GatewayIP(subnet *net.IPNet) net.IP {
 	return next(subnet.IP)
@@ -160,7 +180,7 @@ func existingSubnets(m map[string][]net.IP) (result []*net.IPNet) {
 		if len(v) > 0 {
 			_, ipn, err := net.ParseCIDR(k)
 			if err != nil {
-				panic(fmt.Sprintf("failed to parse a CIDR in the subnet pool: %s", err))
+				panic(fmt.Sprintf("failed to parse a CIDR (%s) in the subnet pool: %s", k, err))
 			}
 
 			result = append(result, ipn)

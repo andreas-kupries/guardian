@@ -1,6 +1,9 @@
 package subnets
 
-import "net"
+import (
+	"fmt"
+	"net"
+)
 
 func equals(a *net.IPNet, b *net.IPNet) bool {
 	aOnes, aBits := a.Mask.Size()
@@ -35,7 +38,8 @@ func max(ipn *net.IPNet) net.IP {
 	min := clone(ipn.IP)
 
 	if len(mask) != len(min) {
-		panic("length of mask is not compatible with length of network IP")
+		panic(fmt.Sprintf("length of mask %s (%d) is not compatible with length of network IP %s (%d)", 
+		mask, len(mask), min, len(min)))
 	}
 
 	max := make([]byte, len(min))
