@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 
@@ -142,41 +143,69 @@ func (n *Networker) Network(log lager.Logger, containerSpec garden.ContainerSpec
 	log.Info("started")
 	defer log.Info("finished")
 
+	session := log.Session("XXX").Session(fmt.Sprintf("%d-networker-%p", os.Getpid(), n)).Session("network")
+	session.Info("arguments", lager.Data{"pid": pid, "container-spec": containerSpec})
+
 	subnetReq, ipReq, err := n.specParser.Parse(log, containerSpec.Network)
+
+	session.Info("parsed-spec", lager.Data{"subnet-request": subnetReq, "ip-request": ipReq, "err": err})
+
 	if err != nil {
 		log.Error("parse-failed", err)
 		return err
 	}
 
 	subnet, ip, err := n.subnetPool.Acquire(log, subnetReq, ipReq, containerSpec.Network)
+
+	session.Info("acquired", lager.Data{"subnet": subnet, "ip": ip, "err": err})
+
 	if err != nil {
 		log.Error("acquire-failed", err)
 		return err
 	}
 
 	config, err := n.configCreator.Create(log, containerSpec.Handle, subnet, ip)
+
+	session.Info("config-created", lager.Data{"config": config, "err": err})
+
 	if err != nil {
 		log.Error("create-config-failed", err)
 		return fmt.Errorf("create network config: %s", err)
 	}
 	log.Info("config-create", lager.Data{"config": config})
 
+	session.Info("save-config")
+
 	save(n.configStore, containerSpec.Handle, config)
 
+	session.Info("saved-now-apply")
+
 	if err := n.configurer.Apply(log, config, pid); err != nil {
+		session.Info("fail-apply", lager.Data{"err": err})
+
 		return err
 	}
 
+	// net-in and -out are port mappings and firewall rules
+
+	session.Info("applied-now-netin")
+
 	for _, netIn := range containerSpec.NetIn {
 		if _, _, err := n.NetIn(log, containerSpec.Handle, netIn.HostPort, netIn.ContainerPort); err != nil {
+			session.Info("fail-netin", lager.Data{"err": err})
+
 			return err
 		}
 	}
 
+	session.Info("netin-now-netout")
+
 	if err := n.BulkNetOut(log, containerSpec.Handle, containerSpec.NetOut); err != nil {
+		session.Info("fail-netout", lager.Data{"err": err})
 		return err
 	}
 
+	session.Info("ok")
 	return nil
 }
 
@@ -244,68 +273,128 @@ func (n *Networker) BulkNetOut(log lager.Logger, handle string, rules []garden.N
 }
 
 func (n *Networker) Destroy(log lager.Logger, handle string) error {
+
+	session := log.Session("XXX").Session(fmt.Sprintf("%d-networker-%p", os.Getpid(), n)).Session("destroy")
+	session.Info("arguments", lager.Data{"handle": handle})
+
 	cfg, err := load(n.configStore, handle)
+
+	session.Info("config-loaded", lager.Data{"config": cfg, "err": err})
+
 	if err != nil {
+		session.Info("fail-config-load")
+
 		log.Error("no-properties-for-container-skipping-destroy-network", err)
 		return nil
 	}
 
+	session.Info("ip-tables-destroy-rules")
+
 	if err := n.configurer.DestroyIPTablesRules(log, cfg); err != nil {
+		session.Info("fail-ip-tables-destroy-rules", lager.Data{"err": err})
 		return err
 	}
 
+	session.Info("subnet-release", lager.Data{"subnet": cfg.Subnet, "ip": cfg.ContainerIP})
+
 	if err := n.subnetPool.Release(cfg.Subnet, cfg.ContainerIP); err != nil && err != subnets.ErrReleasedUnallocatedSubnet {
+		session.Info("fail-subnet-release", lager.Data{"handle": handle, "err": err})
+
 		log.Error("release-failed", err)
 		return err
 	}
 
+	session.Info("mapped-ports")
+
 	if ports, ok := n.configStore.Get(handle, gardener.MappedPortsKey); ok {
+		session.Info("mapped-ports-release", lager.Data{"ports": ports})
+
 		mappings, err := portsFromJson(ports)
 		if err != nil {
+			session.Info("fail-port-retrieval", lager.Data{"handle": handle, "err": err})
 			return err
 		}
+
+		session.Info("port-release")
 
 		for _, m := range mappings {
 			n.portPool.Release(m.HostPort)
 		}
 	}
 
+	session.Info("bridge-if-free")
+
 	if err := n.subnetPool.RunIfFree(cfg.Subnet, func() error {
+		session.Info("bridge-destroyed")
 		return n.configurer.DestroyBridge(log, cfg)
 	}); err != nil {
+		session.Info("fail-bridge-destroyed", lager.Data{"err": err})
 		return err
 	}
 
-	return n.networkDepot.Destroy(log, handle)
+	session.Info("bridge-processing-ok")
+
+	err = n.networkDepot.Destroy(log, handle)
+
+	session.Info("depot-destroyed", lager.Data{"err": err})
+	session.Info("done")
+
+	return err
 }
 
 func (n *Networker) Restore(log lager.Logger, handle string) error {
+
+	session := log.Session("XXX").Session(fmt.Sprintf("%d-networker-%p", os.Getpid(), n)).Session("restore")
+	session.Info("arguments", lager.Data{"handle": handle})
+
 	networkConfig, err := load(n.configStore, handle)
+
+	session.Info("config-loaded", lager.Data{"config": networkConfig, "err": err})
+
 	if err != nil {
+		session.Info("fail-config-load")
+
 		return fmt.Errorf("loading %s: %v", handle, err)
 	}
 
+	session.Info("subnet-remove", lager.Data{"subnet": networkConfig.Subnet, "ip": networkConfig.ContainerIP})
+
 	err = n.subnetPool.Remove(networkConfig.Subnet, networkConfig.ContainerIP)
 	if err != nil {
+		session.Info("fail-subnet-remove", lager.Data{"handle": handle, "err": err})
+
 		return fmt.Errorf("subnet pool removing %s: %v", handle, err)
 	}
 
+	session.Info("mapped-ports")
+
 	currentMappingsJson, ok := n.configStore.Get(handle, gardener.MappedPortsKey)
 	if !ok {
+		session.Info("fail-config-load")
+
 		return nil
 	}
 
+	session.Info("mapped-ports-remove")
+
 	currentMappings, err := portsFromJson(currentMappingsJson)
 	if err != nil {
+		session.Info("fail-port-retrieval", lager.Data{"handle": handle, "err": err})
+
 		return fmt.Errorf("unmarshaling port mappings %s: %v", handle, err)
 	}
 
+	session.Info("port-remove")
+
 	for _, mapping := range currentMappings {
 		if err = n.portPool.Remove(mapping.HostPort); err != nil {
+			session.Info("fail-port-remove", lager.Data{"handle": handle, "err": err})
+
 			return fmt.Errorf("port pool removing %s: %v", handle, err)
 		}
 	}
 
+	session.Info("ok")
 	return nil
 }
 

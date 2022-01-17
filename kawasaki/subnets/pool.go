@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"os"
 	"sync"
 
 	"code.cloudfoundry.org/lager"
@@ -38,7 +39,7 @@ type pool struct {
 	allocated    map[string][]net.IP // net.IPNet.String +> seq net.IP
 	dynamicRange *net.IPNet
 	mu           sync.Mutex
-	log lager.Logger
+	log          lager.Logger
 }
 
 //go:generate counterfeiter . SubnetSelector
@@ -60,9 +61,11 @@ type IPSelector interface {
 }
 
 func NewPool(ipNet *net.IPNet, log lager.Logger) Pool {
-	session := log.Session("XXX")
-	session.Debug("new-pool", lager.Data{"net": ipNet})
-	return &pool{dynamicRange: ipNet, allocated: make(map[string][]net.IP), log: session}
+	r := &pool{dynamicRange: ipNet, allocated: make(map[string][]net.IP)}
+	session := log.Session("XXX").Session(fmt.Sprintf("%d-pool-%p", os.Getpid(), r))
+	session.Info("new-pool", lager.Data{"net": ipNet})
+	r.log = session
+	return r
 }
 
 // Acquire uses the given subnet and IP selectors to request a subnet, container IP address combination
@@ -71,19 +74,36 @@ func (p *pool) Acquire(log lager.Logger, sn SubnetSelector, i IPSelector, networ
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	session := p.log.Session("acquire")
+	session.Info("arguments", lager.Data{"network": network, "subnet": sn, "ipselector": i})
+	session.Info("existing-nets", lager.Data{"have": existingSubnets(p.allocated)})
+
 	if subnet, err = sn.SelectSubnet(p.dynamicRange, existingSubnets(p.allocated)); err != nil {
+		session.Info("select-subnet-fail", lager.Data{"err": err})
 		return nil, nil, err
 	}
+
 	log.Debug("select-subnet", lager.Data{"subnet": subnet, "network": network})
+
+	session.Info("select-subnet", lager.Data{"subnet": subnet, "network": network})
+	session.Info("new-existing-nets", lager.Data{"have": existingSubnets(p.allocated)})
 
 	ips := p.allocated[subnet.String()]
 	existingIPs := append(ips, NetworkIP(subnet), GatewayIP(subnet), BroadcastIP(subnet))
+
+	session.Info("existing-ips", lager.Data{"have": existingIPs})
+
 	if ip, err = i.SelectIP(subnet, existingIPs); err != nil {
+		session.Info("select-ip-fail", lager.Data{"err": err})
 		return nil, nil, err
 	}
 
 	p.allocated[subnet.String()] = append(ips, ip)
-	p.log.Debug("acquired", lager.Data{"subnet": subnet, "ip": ip, "network": network})
+
+	session.Info("acquired", lager.Data{"subnet": subnet, "ip": ip, "network": network})
+	session.Info("new-existing-ips", lager.Data{"have": existingIPs})
+	session.Info("ok")
+
 	return subnet, ip, err
 }
 
@@ -93,18 +113,28 @@ func (p *pool) Remove(subnet *net.IPNet, ip net.IP) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	session := p.log.Session("remove")
+	session.Info("arguments", lager.Data{"subnet": subnet, "ip": ip})
+
 	if ip == nil {
+		session.Info("fail-nil-ip")
 		return ErrIpCannotBeNil
 	}
 
+	session.Info("overlaps?")
+
 	for _, existing := range p.allocated[subnet.String()] {
 		if existing.Equal(ip) {
+			session.Info("fail-overlap", lager.Data{"want": ip, "conflict": existing})
+
 			return ErrOverlapsExistingSubnet
 		}
 	}
 
 	p.allocated[subnet.String()] = append(p.allocated[subnet.String()], ip)
-	p.log.Debug("removed", lager.Data{"subnet": subnet, "ip": ip})
+
+	session.Info("removed", lager.Data{"subnet": subnet, "ip": ip})
+	session.Info("ok")
 	return nil
 }
 
@@ -112,20 +142,33 @@ func (p *pool) Release(subnet *net.IPNet, ip net.IP) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	session := p.log.Session("release")
+	session.Info("arguments", lager.Data{"subnet": subnet, "ip": ip})
+
 	subnetString := subnet.String()
 	ips := p.allocated[subnetString]
 
+	session.Info("subnet-ips", lager.Data{"ips": ips})
+
 	if i, found := indexOf(ips, ip); found {
+		session.Info("found", lager.Data{"at": i})
+
 		if reducedIps, empty := removeIPAtIndex(ips, i); empty {
 			delete(p.allocated, subnetString)
+
+			session.Info("cleared", lager.Data{"subnet": subnet})
 		} else {
 			p.allocated[subnetString] = reducedIps
+
+			session.Info("reduced", lager.Data{"subnet": subnet, "result": reducedIps})
 		}
 
-		p.log.Debug("released", lager.Data{"subnet": subnet, "ip": ip})
+		session.Info("released", lager.Data{"subnet": subnet, "ip": ip})
+		session.Info("ok")
 		return nil
 	}
 
+	session.Info("fail-unallocated")
 	return ErrReleasedUnallocatedSubnet
 }
 
@@ -140,16 +183,26 @@ func (p *pool) RunIfFree(subnet *net.IPNet, cb func() error) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
+	session := p.log.Session("run-if-free")
+	session.Info("arguments", lager.Data{"subnet": subnet})
+
 	if _, ok := p.allocated[subnet.String()]; ok {
+		session.Info("used-skip")
 		return nil
 	}
 
-	return cb()
+	session.Info("run")
+
+	err := cb()
+
+	session.Info("run-result", lager.Data{"err": err})
+
+	return err
 }
 
 func (p *pool) MarshalJSON() ([]byte, error) {
 	data := map[string]interface{}{
-		"allocated": p.allocated,
+		"allocated":    p.allocated,
 		"dynamicRange": p.dynamicRange,
 	}
 	buf, err := json.Marshal(data)
