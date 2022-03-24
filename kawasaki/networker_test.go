@@ -168,7 +168,7 @@ var _ = Describe("Networker", func() {
 
 			networker.Network(logger, containerSpec, 42)
 			Expect(fakeSubnetPool.AcquireCallCount()).To(Equal(1))
-			_, sr, ir := fakeSubnetPool.AcquireArgsForCall(0)
+			_, _, sr, ir, _ := fakeSubnetPool.AcquireArgsForCall(0)
 			Expect(sr).To(Equal(someSubnetRequest))
 			Expect(ir).To(Equal(someIpRequest))
 		})
@@ -288,7 +288,7 @@ var _ = Describe("Networker", func() {
 			Expect(networker.Destroy(logger, "some-handle")).To(Succeed())
 
 			Expect(fakeSubnetPool.ReleaseCallCount()).To(Equal(1))
-			actualSubnet, actualIp := fakeSubnetPool.ReleaseArgsForCall(0)
+			_, actualSubnet, actualIp := fakeSubnetPool.ReleaseArgsForCall(0)
 
 			Expect(actualIp).To(Equal(networkConfig.ContainerIP))
 			Expect(actualSubnet).To(Equal(networkConfig.Subnet))
@@ -585,7 +585,7 @@ var _ = Describe("Networker", func() {
 		It("removes the subnet from the the subnet pool", func() {
 			Expect(networker.Restore(logger, "some-handle")).To(Succeed())
 			Expect(fakeSubnetPool.RemoveCallCount()).To(Equal(1))
-			calledSubnet, calledContainerIP := fakeSubnetPool.RemoveArgsForCall(0)
+			_, calledSubnet, calledContainerIP := fakeSubnetPool.RemoveArgsForCall(0)
 			Expect(calledSubnet.String()).To(Equal("123.123.123.0/24"))
 			Expect(calledContainerIP.String()).To(Equal("123.123.123.12"))
 		})

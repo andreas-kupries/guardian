@@ -10,12 +10,14 @@ import (
 )
 
 type FakePool struct {
-	AcquireStub        func(lager.Logger, subnets.SubnetSelector, subnets.IPSelector) (*net.IPNet, net.IP, error)
+	AcquireStub        func(string, lager.Logger, subnets.SubnetSelector, subnets.IPSelector, string) (*net.IPNet, net.IP, error)
 	acquireMutex       sync.RWMutex
 	acquireArgsForCall []struct {
+		arg0 string
 		arg1 lager.Logger
 		arg2 subnets.SubnetSelector
 		arg3 subnets.IPSelector
+		arg4 string
 	}
 	acquireReturns struct {
 		result1 *net.IPNet
@@ -37,9 +39,10 @@ type FakePool struct {
 	capacityReturnsOnCall map[int]struct {
 		result1 int
 	}
-	ReleaseStub        func(*net.IPNet, net.IP) error
+	ReleaseStub        func(string, *net.IPNet, net.IP) error
 	releaseMutex       sync.RWMutex
 	releaseArgsForCall []struct {
+		arg0 string
 		arg1 *net.IPNet
 		arg2 net.IP
 	}
@@ -49,9 +52,10 @@ type FakePool struct {
 	releaseReturnsOnCall map[int]struct {
 		result1 error
 	}
-	RemoveStub        func(*net.IPNet, net.IP) error
+	RemoveStub        func(string, *net.IPNet, net.IP) error
 	removeMutex       sync.RWMutex
 	removeArgsForCall []struct {
+		arg0 string
 		arg1 *net.IPNet
 		arg2 net.IP
 	}
@@ -77,18 +81,20 @@ type FakePool struct {
 	invocationsMutex sync.RWMutex
 }
 
-func (fake *FakePool) Acquire(arg1 lager.Logger, arg2 subnets.SubnetSelector, arg3 subnets.IPSelector) (*net.IPNet, net.IP, error) {
+func (fake *FakePool) Acquire(arg0 string, arg1 lager.Logger, arg2 subnets.SubnetSelector, arg3 subnets.IPSelector, arg4 string) (*net.IPNet, net.IP, error) {
 	fake.acquireMutex.Lock()
 	ret, specificReturn := fake.acquireReturnsOnCall[len(fake.acquireArgsForCall)]
 	fake.acquireArgsForCall = append(fake.acquireArgsForCall, struct {
+		arg0 string
 		arg1 lager.Logger
 		arg2 subnets.SubnetSelector
 		arg3 subnets.IPSelector
-	}{arg1, arg2, arg3})
-	fake.recordInvocation("Acquire", []interface{}{arg1, arg2, arg3})
+		arg4 string
+	}{arg0, arg1, arg2, arg3, arg4})
+	fake.recordInvocation("Acquire", []interface{}{arg0, arg1, arg2, arg3, arg4})
 	fake.acquireMutex.Unlock()
 	if fake.AcquireStub != nil {
-		return fake.AcquireStub(arg1, arg2, arg3)
+		return fake.AcquireStub(arg0, arg1, arg2, arg3, arg4)
 	}
 	if specificReturn {
 		return ret.result1, ret.result2, ret.result3
@@ -103,17 +109,17 @@ func (fake *FakePool) AcquireCallCount() int {
 	return len(fake.acquireArgsForCall)
 }
 
-func (fake *FakePool) AcquireCalls(stub func(lager.Logger, subnets.SubnetSelector, subnets.IPSelector) (*net.IPNet, net.IP, error)) {
+func (fake *FakePool) AcquireCalls(stub func(string, lager.Logger, subnets.SubnetSelector, subnets.IPSelector, string) (*net.IPNet, net.IP, error)) {
 	fake.acquireMutex.Lock()
 	defer fake.acquireMutex.Unlock()
 	fake.AcquireStub = stub
 }
 
-func (fake *FakePool) AcquireArgsForCall(i int) (lager.Logger, subnets.SubnetSelector, subnets.IPSelector) {
+func (fake *FakePool) AcquireArgsForCall(i int) (string, lager.Logger, subnets.SubnetSelector, subnets.IPSelector, string) {
 	fake.acquireMutex.RLock()
 	defer fake.acquireMutex.RUnlock()
 	argsForCall := fake.acquireArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2, argsForCall.arg3
+	return argsForCall.arg0, argsForCall.arg1, argsForCall.arg2, argsForCall.arg3, argsForCall.arg4
 }
 
 func (fake *FakePool) AcquireReturns(result1 *net.IPNet, result2 net.IP, result3 error) {
@@ -197,17 +203,18 @@ func (fake *FakePool) CapacityReturnsOnCall(i int, result1 int) {
 	}{result1}
 }
 
-func (fake *FakePool) Release(arg1 *net.IPNet, arg2 net.IP) error {
+func (fake *FakePool) Release(arg0 string, arg1 *net.IPNet, arg2 net.IP) error {
 	fake.releaseMutex.Lock()
 	ret, specificReturn := fake.releaseReturnsOnCall[len(fake.releaseArgsForCall)]
 	fake.releaseArgsForCall = append(fake.releaseArgsForCall, struct {
+		arg0 string
 		arg1 *net.IPNet
 		arg2 net.IP
-	}{arg1, arg2})
-	fake.recordInvocation("Release", []interface{}{arg1, arg2})
+	}{arg0, arg1, arg2})
+	fake.recordInvocation("Release", []interface{}{arg0, arg1, arg2})
 	fake.releaseMutex.Unlock()
 	if fake.ReleaseStub != nil {
-		return fake.ReleaseStub(arg1, arg2)
+		return fake.ReleaseStub(arg0, arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -222,17 +229,17 @@ func (fake *FakePool) ReleaseCallCount() int {
 	return len(fake.releaseArgsForCall)
 }
 
-func (fake *FakePool) ReleaseCalls(stub func(*net.IPNet, net.IP) error) {
+func (fake *FakePool) ReleaseCalls(stub func(string, *net.IPNet, net.IP) error) {
 	fake.releaseMutex.Lock()
 	defer fake.releaseMutex.Unlock()
 	fake.ReleaseStub = stub
 }
 
-func (fake *FakePool) ReleaseArgsForCall(i int) (*net.IPNet, net.IP) {
+func (fake *FakePool) ReleaseArgsForCall(i int) (string, *net.IPNet, net.IP) {
 	fake.releaseMutex.RLock()
 	defer fake.releaseMutex.RUnlock()
 	argsForCall := fake.releaseArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg0, argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakePool) ReleaseReturns(result1 error) {
@@ -258,17 +265,18 @@ func (fake *FakePool) ReleaseReturnsOnCall(i int, result1 error) {
 	}{result1}
 }
 
-func (fake *FakePool) Remove(arg1 *net.IPNet, arg2 net.IP) error {
+func (fake *FakePool) Remove(arg0 string, arg1 *net.IPNet, arg2 net.IP) error {
 	fake.removeMutex.Lock()
 	ret, specificReturn := fake.removeReturnsOnCall[len(fake.removeArgsForCall)]
 	fake.removeArgsForCall = append(fake.removeArgsForCall, struct {
+		arg0 string
 		arg1 *net.IPNet
 		arg2 net.IP
-	}{arg1, arg2})
-	fake.recordInvocation("Remove", []interface{}{arg1, arg2})
+	}{arg0, arg1, arg2})
+	fake.recordInvocation("Remove", []interface{}{arg0, arg1, arg2})
 	fake.removeMutex.Unlock()
 	if fake.RemoveStub != nil {
-		return fake.RemoveStub(arg1, arg2)
+		return fake.RemoveStub(arg0, arg1, arg2)
 	}
 	if specificReturn {
 		return ret.result1
@@ -283,17 +291,17 @@ func (fake *FakePool) RemoveCallCount() int {
 	return len(fake.removeArgsForCall)
 }
 
-func (fake *FakePool) RemoveCalls(stub func(*net.IPNet, net.IP) error) {
+func (fake *FakePool) RemoveCalls(stub func(string, *net.IPNet, net.IP) error) {
 	fake.removeMutex.Lock()
 	defer fake.removeMutex.Unlock()
 	fake.RemoveStub = stub
 }
 
-func (fake *FakePool) RemoveArgsForCall(i int) (*net.IPNet, net.IP) {
+func (fake *FakePool) RemoveArgsForCall(i int) (string, *net.IPNet, net.IP) {
 	fake.removeMutex.RLock()
 	defer fake.removeMutex.RUnlock()
 	argsForCall := fake.removeArgsForCall[i]
-	return argsForCall.arg1, argsForCall.arg2
+	return argsForCall.arg0, argsForCall.arg1, argsForCall.arg2
 }
 
 func (fake *FakePool) RemoveReturns(result1 error) {

@@ -155,7 +155,7 @@ func (n *Networker) Network(log lager.Logger, containerSpec garden.ContainerSpec
 		return err
 	}
 
-	subnet, ip, err := n.subnetPool.Acquire(log, subnetReq, ipReq, containerSpec.Network)
+	subnet, ip, err := n.subnetPool.Acquire(containerSpec.Handle, log, subnetReq, ipReq, containerSpec.Network)
 
 	session.Info("acquired", lager.Data{"subnet": subnet, "ip": ip, "err": err})
 
@@ -297,7 +297,7 @@ func (n *Networker) Destroy(log lager.Logger, handle string) error {
 
 	session.Info("subnet-release", lager.Data{"subnet": cfg.Subnet, "ip": cfg.ContainerIP})
 
-	if err := n.subnetPool.Release(cfg.Subnet, cfg.ContainerIP); err != nil && err != subnets.ErrReleasedUnallocatedSubnet {
+	if err := n.subnetPool.Release(handle, cfg.Subnet, cfg.ContainerIP); err != nil && err != subnets.ErrReleasedUnallocatedSubnet {
 		session.Info("fail-subnet-release", lager.Data{"handle": handle, "err": err})
 
 		log.Error("release-failed", err)
@@ -359,7 +359,7 @@ func (n *Networker) Restore(log lager.Logger, handle string) error {
 
 	session.Info("subnet-remove", lager.Data{"subnet": networkConfig.Subnet, "ip": networkConfig.ContainerIP})
 
-	err = n.subnetPool.Remove(networkConfig.Subnet, networkConfig.ContainerIP)
+	err = n.subnetPool.Remove(handle, networkConfig.Subnet, networkConfig.ContainerIP)
 	if err != nil {
 		session.Info("fail-subnet-remove", lager.Data{"handle": handle, "err": err})
 

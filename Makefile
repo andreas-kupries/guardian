@@ -1,7 +1,7 @@
 BASE=registry.suse.com/cap/scf-diego-cell
 BASETAG=735bec6bc52438a4b73b670ad4a4c2959b82ae69
 
-TAG=bugzilla-11917460-extended-logging
+TAG=bugzilla-11917460-extended-logging-and-fix
 DEV=registry.hub.docker.com/a99k/scf-diego-cell
 
 gdn:
