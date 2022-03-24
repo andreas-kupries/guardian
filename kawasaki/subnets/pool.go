@@ -13,6 +13,9 @@ import (
 	"code.cloudfoundry.org/lager"
 )
 
+// The main pool management functions are extended to take a new ownership handle as their firxt argument.
+// The networker is modified to supply these, using the `containerSpec.handle`.
+
 //go:generate counterfeiter -o fake_subnet_pool/fake_pool.go . Pool
 type Pool interface {
 	// Allocates an IP address and associates it with a subnet. The subnet is selected by the given SubnetSelector.
@@ -34,6 +37,40 @@ type Pool interface {
 	// Run the provided callback if the given subnet is not in use
 	RunIfFree(*net.IPNet, func() error) error
 }
+
+// The pool tracks subnets and IP addresses allocated in them. As part of that it tracks
+// ownership of the IP addresses as well, using the `containerSpec.handle`. IOW it tracks
+// which container/app instance claims each IP address.
+//
+// This information is added to head of a very gnarly concurrency heisenbug debugged over
+// half a year where it looked as if a new application A would steal the IP and networking
+// from another application B, leaving B running yet inaccessible, and users trying to use
+// B reaching A instead.
+//
+// The scenario of the issue is as follows:
+//
+// 1. Application X gets destroyed.
+// 2. The destruction is only partial. While IP and networking got released, the container or other thing failed.
+// 3. A new application Y is started, finds the IP free, and claims it, with networking and all.
+// 4. The failure in step 2 triggers a repeat call to the destruction of X.
+//    This not only releases container this time, it also sees the IP and networking claimed, and releases them.
+//    Again. However the IP belonged to Y already, and now Y is without networking.
+// 5. A third application Z is started, finds the IP free, and claims it.
+//    Now it appears as if Z stole the IP from Y.
+//    It actually was the last action of destroying X which did it.
+//
+// This is a heisenbug because it requires (a) a destruction to fail only in part, and
+// then further (b) have another app start claim the IP within the roughly 1-2 second
+// window from that to the retry of the destruction.
+//
+// The fix for this is the addition of ownership information to each IP. While the chosen
+// information, the `containerSpec.handle` links back to the relevant container, this is
+// not really important. Only that it is properly unique between the applications.
+//
+// While an `Acquire` now simply saves the information the `Release` does more. It checks
+// if the actual owner stored in the map matches the owner performing the destruction. If
+// they do not match the entry is not removed, same as if it did not exist. This heads off
+// step 4 in the above, the retried `Release` for X squashing the data already given to Y.
 
 type ipInfo struct {
 	ip    net.IP // net.IPNet.String +> seq net.IP
