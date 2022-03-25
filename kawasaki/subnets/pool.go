@@ -13,7 +13,7 @@ import (
 	"code.cloudfoundry.org/lager"
 )
 
-// The main pool management functions are extended to take a new ownership handle as their firxt argument.
+// The main pool management functions are extended to take a new ownership handle as their first argument.
 // The networker is modified to supply these, using the `containerSpec.handle`.
 
 //go:generate counterfeiter -o fake_subnet_pool/fake_pool.go . Pool
