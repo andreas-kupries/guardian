@@ -192,40 +192,41 @@ func (p *pool) Release(owner string, subnet *net.IPNet, ip net.IP) error {
 	defer p.mu.Unlock()
 
 	session := p.log.Session("release")
-	session.Info("arguments", lager.Data{"subnet": subnet, "ip": ip})
+	session.Info("arguments", lager.Data{"subnet": subnet, "ip": ip, "handle": owner})
 
 	subnetString := subnet.String()
 	ips := p.allocated[subnetString]
 
-	session.Info("subnet-ips", lager.Data{"ips": ips})
+	session.Info("subnet-ips", lager.Data{"ips": ips, "subnet": subnet, "ip": ip, "handle": owner})
 
 	if i, found := indexOf(ips, ip); found {
 		// Owner mismatch. A new owner slipped into the window between partial and
 		// full deletion of an app, and reclaimed the IP. Treat as if the IP is
 		// already deleted, i.e. same as not found.
 		if ips[i].owner != owner {
-			session.Info("fail-unallocated")
+			session.Info("fail-mismatch-owner", lager.Data{"ip": ip, "handle": owner})
 			return ErrReleasedUnallocatedSubnet
 		}
 
-		session.Info("found", lager.Data{"at": i})
+		session.Info("found", lager.Data{"at": i, "ip": ip, "handle": owner})
 
 		if reducedIps, empty := removeIPAtIndex(ips, i); empty {
 			delete(p.allocated, subnetString)
 
-			session.Info("cleared", lager.Data{"subnet": subnet})
+			session.Info("cleared", lager.Data{"subnet": subnet, "ip": ip, "handle": owner})
 		} else {
 			p.allocated[subnetString] = reducedIps
 
-			session.Info("reduced", lager.Data{"subnet": subnet, "result": reducedIps})
+			session.Info("reduced", lager.Data{"subnet": subnet, "result": reducedIps,
+				"ip": ip, "handle": owner})
 		}
 
-		session.Info("released", lager.Data{"subnet": subnet, "ip": ip})
+		session.Info("released", lager.Data{"subnet": subnet, "ip": ip, "handle": owner})
 		session.Info("ok")
 		return nil
 	}
 
-	session.Info("fail-unallocated")
+	session.Info("fail-unallocated", lager.Data{"ip": ip, "handle": owner})
 	return ErrReleasedUnallocatedSubnet
 }
 
