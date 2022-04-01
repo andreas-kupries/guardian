@@ -117,25 +117,25 @@ func (p *pool) Acquire(owner string, log lager.Logger, sn SubnetSelector, i IPSe
 	defer p.mu.Unlock()
 
 	session := p.log.Session("acquire")
-	session.Info("arguments", lager.Data{"network": network, "subnet": sn, "ipselector": i})
-	session.Info("existing-nets", lager.Data{"have": existingSubnets(p.allocated)})
+	session.Info("arguments", lager.Data{"network": network, "subnet": sn, "ipselector": i, "handle": owner})
+	session.Info("existing-nets", lager.Data{"have": existingSubnets(p.allocated), "handle": owner})
 
 	if subnet, err = sn.SelectSubnet(p.dynamicRange, existingSubnets(p.allocated)); err != nil {
-		session.Info("select-subnet-fail", lager.Data{"err": err})
+		session.Info("select-subnet-fail", lager.Data{"err": err, "handle": owner})
 		return nil, nil, err
 	}
 
-	log.Debug("select-subnet", lager.Data{"subnet": subnet, "network": network})
+	log.Debug("select-subnet", lager.Data{"subnet": subnet, "network": network, "handle": owner})
 
-	session.Info("select-subnet", lager.Data{"subnet": subnet, "network": network})
+	session.Info("select-subnet", lager.Data{"subnet": subnet, "network": network, "handle": owner})
 
 	ips := justIPs(p.allocated[subnet.String()])
 	existingIPs := append(ips, NetworkIP(subnet), GatewayIP(subnet), BroadcastIP(subnet))
 
-	session.Info("existing-ips", lager.Data{"have": existingIPs})
+	session.Info("existing-ips", lager.Data{"have": existingIPs, "handle": owner})
 
 	if ip, err = i.SelectIP(subnet, existingIPs); err != nil {
-		session.Info("select-ip-fail", lager.Data{"err": err})
+		session.Info("select-ip-fail", lager.Data{"err": err, "handle": owner})
 		return nil, nil, err
 	}
 
@@ -145,9 +145,9 @@ func (p *pool) Acquire(owner string, log lager.Logger, sn SubnetSelector, i IPSe
 		owner: owner,
 	})
 
-	session.Info("acquired", lager.Data{"subnet": subnet, "ip": ip, "network": network})
-	session.Info("new-existing-nets", lager.Data{"have": existingSubnets(p.allocated)})
-	session.Info("new-existing-ips", lager.Data{"have": p.allocated[subnet.String()]})
+	session.Info("acquired", lager.Data{"subnet": subnet, "ip": ip, "network": network, "handle": owner})
+	session.Info("new-existing-nets", lager.Data{"have": existingSubnets(p.allocated), "handle": owner})
+	session.Info("new-existing-ips", lager.Data{"have": p.allocated[subnet.String()], "handle": owner})
 	session.Info("ok")
 
 	return subnet, ip, err
